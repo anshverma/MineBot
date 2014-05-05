@@ -1,78 +1,71 @@
-#include "mpr121.h"
-#include <Wire.h>
-#include <Servo.h>           // Import servo library
+//
+//This code was authored by Ansh Verma, Ryan Clark, Tyler Helmus and Jiajun Cao
+//for the feeder mechanism, MPR 121 mine detection and Flagging Arm Servo of the 
+//Mine-robot for the course completion of ME 588 at Purdue University. 
+// 
 
-#define ARM_SPEED 10          // arm speed
-#define ARM_HOME 71        // arm electromagnet-magnet pickup position
-#define PICKUP_POS 80      // flag dispensor servo position for electromagnet-magnet pickup
-#define RETREIVE_POS 0       // flag dispensor servo position of the magnet reservoir
-#define FLAG_SPEED 1         // flag dispensor servo speed
-#define MAG_LOAD 1700         // delay for magnet to drop into slot
-#define MAG_LIFT_DELAY 1500   // ms delay which ensures magnet is lifted prior to arm movin
-#define WARN_LIGHT 7         // define pins and states with arbitrary value
-#define MAGNET 6
-#define IRQ_PIN 4            // Digital 2
-#define ARM_SERVO 9
-#define FLAG_SERVO 10
-#define ARM_MOVE 500
-#define BUTTON 8
-#define MINE_DETECT 1000
-#define COMM A0
+#include "mpr121.h"         //Import capacitive touch sensor library
+#include <Wire.h>
+#include <Servo.h>          // Import servo library
+
+#define ARM_SPEED 10        // arm speed
+#define ARM_HOME 71         // arm electromagnet-magnet pickup position
+#define PICKUP_POS 80       // flag dispensor servo position for electromagnet-magnet pickup
+#define RETREIVE_POS 0      // flag dispensor servo position of the magnet reservoir
+#define FLAG_SPEED 1        // flag dispensor servo speed
+#define MAG_LOAD 1700       // delay for magnet to drop into slot
+#define MAG_LIFT_DELAY 1500 // ms delay which ensures magnet is lifted prior to arm movin
+#define WARN_LIGHT 7        // define pins and states with arbitrary value
+#define MAGNET 6            //Define pin for magnet 
+#define IRQ_PIN 4           // Define pin for IRQ on capacitive touch
+#define ARM_SERVO 9         //Define pin for PWM signal to arm servo
+#define FLAG_SERVO 10       //Define pin for PWM signal to flagging servo
+#define ARM_MOVE 500        //Define delay for arm movement to complete
+#define BUTTON 8            //Define pin for start up sensing
+#define MINE_DETECT 1000    //Define delay for robot to be in position prior to lifting magnet
+#define COMM A0             //Define pin for turning communication from drive arduino: stops flagging when turning
 
 Servo armServo, flagServo; //Name servo
 
-//int WARN_LIGHT = 7; //define pins and states with arbitrary value
-//int MagLiftDelay = 300;
-//int Magnet = 6; //End Ryan's Insert
 int armPos = ARM_HOME;
-//int targetArmPos;
-
-//int irqpin = 4;  // Digital 2
 boolean touchStates[12]; //to keep track of the previous touch states
 
 void setup() {
-  pinMode(IRQ_PIN, INPUT);
+  pinMode(IRQ_PIN, INPUT); //enable IRQ pin
   digitalWrite(IRQ_PIN, HIGH); //enable pullup resistor
 
   //Ryan Insert Begin---- Declare Pins
   armServo.attach (ARM_SERVO);//Main Servo
   flagServo.attach (FLAG_SERVO);//Mag Feed Servo
-  pinMode(WARN_LIGHT, OUTPUT);
-  pinMode(MAGNET, OUTPUT);
-  pinMode(BUTTON, INPUT);
-  pinMode(COMM, INPUT);
-  digitalWrite(WARN_LIGHT, LOW);
-  digitalWrite(MAGNET, LOW);//Ryan Insert End
+  pinMode(MAGNET, OUTPUT);//Enable magnet pin
+  pinMode(BUTTON, INPUT);//enable start button
+  pinMode(COMM, INPUT);//Define pin for turning communication
+  digitalWrite(MAGNET, LOW);//Define starting LOW state for the magnet
 
   Serial.begin(9600);
   Wire.begin();
-  //  armServo.writeMicroseconds(ARM_HOME);
-  //  delay(1000);
-  //  armReturn();
-  armServo.write(ARM_HOME);
-  getNextFlag();
-  //delay(1000);
-  //armPosition(ARM_HOME);
-  mpr121_setup();
-  while(!digitalRead(BUTTON)){
+
+  armServo.write(ARM_HOME);//Start with servo in the home position
+  getNextFlag();//Function to actuate magnet feeder servo to get the next flag
+  mpr121_setup();//setput the capacitive touch sensor
+  while(!digitalRead(BUTTON)){//Look for when the start button is pushed
     delay(5);
   }
   delay(2500);
-  deployWings();
+  deployWings();//deploy the wings in the start sequence
   
 }
 
 void loop()
 {
-  if(digitalRead(COMM)){
-  if(digitalRead(BUTTON)){
+  if(digitalRead(COMM)){ //If the robot is not turning, continue on with the switch case and subsequent flagging procedure
+  if(digitalRead(BUTTON)){ //Read startup button
     while(true){
       delay(10);
     }
   }
-  // if (!checkInterrupt())
-  //  {
-  Wire.requestFrom(0x5A, 2);
+
+  Wire.requestFrom(0x5A, 2);//printing touch state from the capacitive touch sensor
   byte LSB = Wire.read();
   byte MSB = Wire.read();
   uint16_t touched = ((MSB << 8) | LSB);
@@ -82,16 +75,16 @@ void loop()
   //BEGIN SWITCH CASE------------------------------
   switch (touched) {
   case 1:
-    Serial.print("a");
-    delay(MINE_DETECT);
-    digitalWrite(MAGNET, HIGH);
-    delay(MAG_LIFT_DELAY);
-    armPosition(168);
-    delay(ARM_MOVE);
-    digitalWrite(MAGNET, LOW);
-    delay(MAG_LIFT_DELAY);
-    armReturn();
-    getNextFlag();
+    Serial.print("a");//check touch state to see which wire was touched
+    delay(MINE_DETECT);//Delay for wheels to stop rotating
+    digitalWrite(MAGNET, HIGH);//Turn electromagnet on
+    delay(MAG_LIFT_DELAY);//Delay to ensure the magnet has been lifted up to the electromagnet
+    armPosition(168);//Move the arm servo to the necessary location
+    delay(ARM_MOVE);//Wait for the servo to reach this location
+    digitalWrite(MAGNET, LOW);//Turn off the electromagnet to release the flag
+    delay(MAG_LIFT_DELAY);//Ensure the magnet has been dropped
+    armReturn();//Return the arm to the home position
+    getNextFlag();//Actuate the magnet feeder servo
     break;
   case 2:
     Serial.print("b");
@@ -227,9 +220,7 @@ void loop()
     break;
   case 0:
     Serial.print("Default");
-    //armReturn();
-    //flagServo.writeMicroseconds (PICKUP_POS);
-    digitalWrite(MAGNET, LOW);
+    digitalWrite(MAGNET, LOW);//Default position with magnet off
     break;
   }
 
@@ -324,16 +315,16 @@ void set_register(int address, unsigned char r, unsigned char v) {
   Wire.endTransmission();
 }
 
-void armPosition(int target) {
-  int pos;
-  armPos = target;
-  if (armPos > ARM_HOME) {
-    for (pos = ARM_HOME; pos <= armPos; pos++) {
+void armPosition(int target) {//Code to move the arm after a mine is detected
+  int pos;//position pulled from switch case
+  armPos = target;//current position of arm so we can see which direction arm must turn
+  if (armPos > ARM_HOME) {//Turn counterclockwise
+    for (pos = ARM_HOME; pos <= armPos; pos++) {//velocity control for servo to move to desired position
       armServo.write (pos);
-      delay(ARM_SPEED);
+      delay(ARM_SPEED);//Delay which dictates the arm speed
     }
   }
-  if (armPos < ARM_HOME) {
+  if (armPos < ARM_HOME) {//Same as above except for clockwise movement
     for (pos = ARM_HOME; pos >= armPos; pos--) {
       armServo.write (pos);
       delay(ARM_SPEED);
@@ -341,7 +332,7 @@ void armPosition(int target) {
   }
 }
 
-void armReturn() {
+void armReturn() {//Speed controlled return function after flag is dropped
   int pos;
   if (armPos > ARM_HOME) {
     for (pos = armPos; pos >= ARM_HOME; pos--) {
@@ -357,27 +348,19 @@ void armReturn() {
   }
 }
 
-void getNextFlag() {
-  //  int flagPos;
-  //  for (flagPos = PICKUP_POS; flagPos > RETREIVE_POS; flagPos--) {
-  //    flagServo.write (flagPos);
-  //    delay(FLAG_SPEED);
-  //  }
-  flagServo.write(RETREIVE_POS);
-  delay(MAG_LOAD);
-  flagServo.write(PICKUP_POS);
-  //  for (flagPos = RETREIVE_POS; flagPos < PICKUP_POS; flagPos++) {
-  //    flagServo.write(flagPos);
-  //    delay(FLAG_SPEED); 
-  //  }
+void getNextFlag() {//Function to actuate the magnet feeder
+
+  flagServo.write(RETREIVE_POS);//Move to get a magnet
+  delay(MAG_LOAD);//Delay to get in position
+  flagServo.write(PICKUP_POS);//Return to the home position with a new flag
 }
 
-void deployWings(){
-  armPosition(34);
+void deployWings(){//startup function to delploy the wings
+  armPosition(34);//drop right wing
   delay(200);
   armReturn();
-  armPosition(110);
+  armPosition(110);//drop left wing
   delay(200);
-  armReturn();
+  armReturn();//return arm to home position
 }
 
